@@ -39,22 +39,38 @@
     (-> (sine-tone ctx note)
         (connect-to (soft-attack ctx note)))))
 
+(def ctx-keeper (atom nil))
+
+(defn get-ctx!
+  "If ctx-keeper already has an AudioContext object, return it.
+  Otherwise, create an AudioContext object, if possible. Store the
+  object in ctx-keeper for future use. (Creating too many AudioContext
+  objects results in Chrome complaining with 'Uncaught SyntaxError:
+  audio resources unavailable for AudioContext construction'.)"
+  []
+  (if @ctx-keeper
+    @ctx-keeper
+    (if-let [ctor (or (.-AudioContext js/window)
+                      (.-webkitAudioContext js/window))]
+      (let [ctx (new ctor)]
+        (swap! ctx-keeper (constantly ctx))
+        ctx)
+      (js/alert "Sorry, this browser doesn't support AudioContext."))))
+
 (defn play!
   "Kick off playing a sequence of notes. note-fn must take two
   arguments, an AudioContext object and a map representing one note to
   play. It must return an AudioNode object that will play that note."
   [note-fn notes]
-  (if-let [ctor (or (.-AudioContext js/window)
-                      (.-webkitAudioContext js/window))]
-    (let [ctx (new ctor)
-          compressor (.createDynamicsCompressor ctx)] ;; for the safety of your speakers and ears
-      (let [now (.-currentTime ctx)]
-        (doseq [note notes]
-          (->
-           (note-fn ctx (update-in note [:delay] + now))
-           (connect-to compressor))))
-      (connect-to compressor (.-destination ctx)))
-    (js/alert "Sorry, this browser doesn't seem to support AudioContext")))
+  (if-let [ctx (get-ctx!)]
+    (let [compressor (.createDynamicsCompressor ctx)
+          now (.-currentTime ctx)]
+      (doseq [note notes]
+        (->
+         (note-fn ctx (update-in note [:delay] + now))
+         (connect-to compressor)))
+      (connect-to compressor (.-destination ctx)))))
+
 
 #_(play! woo [{:cent 1100, :duration 1, :delay 0, :volume 0.4}])
 
